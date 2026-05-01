@@ -1,0 +1,27 @@
+[package]
+name    = "nodadark-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "NodaDark — Interface Desktop (Tauri)"
+
+[lib]
+name = "nodadark_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "nodadark-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+nodadark-engine = { path = "../../crates/nodadark-engine" }
+
+tauri      = { version = "1.6", features = ["dialog-open", "dialog-save", "clipboard-all", "notification-all"] }
+tokio      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+anyhow     = { workspace = true }
+tracing    = { workspace = true }
+tracing-subscriber = { workspace = true }

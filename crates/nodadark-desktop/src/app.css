@@ -1,0 +1,144 @@
+/* app.css — Thème Cyber-Dark NodaDark */
+
+:root {
+  --bg:         #0a0c14;
+  --bg-panel:   #12162a;
+  --bg-hover:   #1a2040;
+  --bg-select:  #1e3a6e;
+  --border:     #284882;
+  --accent:     #00d4ff;
+  --accent-dim: #0088aa;
+  --green:      #50e680;
+  --red:        #dc3232;
+  --yellow:     #dcb432;
+  --cyan:       #32c8dc;
+  --gray:       #64708a;
+  --text:       #d2d7e6;
+  --text-dim:   #8892aa;
+  --font-mono:  'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --radius:     4px;
+  --transition: 0.15s ease;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+/* ── Buttons ── */
+button {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--transition);
+  outline: none;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button:active { background: var(--bg-hover); }
+button.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: bold;
+}
+button.danger { border-color: var(--red); color: var(--red); }
+button.danger:hover { background: rgba(220,50,50,0.15); }
+button.active { background: var(--bg-select); border-color: var(--accent); color: var(--accent); }
+
+/* ── Inputs ── */
+input, textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color var(--transition);
+}
+input:focus, textarea:focus { border-color: var(--accent); }
+
+/* ── Panels ── */
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* ── Tags de statut HTTP ── */
+.status-2xx { color: var(--green); }
+.status-3xx { color: var(--yellow); }
+.status-4xx { color: #e06420; }
+.status-5xx { color: var(--red); }
+.status-pending { color: var(--cyan); }
+
+/* ── Badges de méthode ── */
+.method { font-weight: bold; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+.method-GET    { color: var(--green);  border: 1px solid var(--green); }
+.method-POST   { color: var(--cyan);   border: 1px solid var(--cyan); }
+.method-PUT    { color: var(--yellow); border: 1px solid var(--yellow); }
+.method-DELETE { color: var(--red);    border: 1px solid var(--red); }
+.method-PATCH  { color: #c87ade;       border: 1px solid #c87ade; }
+
+/* ── Tabs ── */
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+}
+.tab {
+  padding: 6px 14px;
+  cursor: pointer;
+  color: var(--text-dim);
+  border-bottom: 2px solid transparent;
+  transition: all var(--transition);
+  font-size: 12px;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Overlay / Modal ── */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 20px;
+  min-width: 400px;
+  max-width: 700px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 0 40px rgba(0,212,255,0.15);
+}
+.modal h3 { color: var(--accent); margin-bottom: 14px; font-size: 14px; }
