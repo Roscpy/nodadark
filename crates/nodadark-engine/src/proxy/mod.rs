@@ -1,7 +1,6 @@
 // nodadark-engine/src/proxy/mod.rs
 
 pub mod cert;
-pub mod mitm;
 pub mod server;
 
 use crate::{InterceptedRequest, RequestState};
@@ -9,7 +8,7 @@ use dashmap::DashMap;
 use std::collections::VecDeque;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Mutex,
 };
 
 /// État global partagé entre le proxy et l'API
