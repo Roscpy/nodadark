@@ -25,4 +25,3 @@ clap       = { version = "4", features = ["derive"] }
 # Pour l'affichage hex
 hex        = "0.4"
 # Pour le JSON formaté
-serde_json = { version = "1", features = [] }
