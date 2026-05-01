@@ -1,6 +1,7 @@
 // nodadark-engine/src/storage/mod.rs
 // Sauvegarde et chargement de sessions sur disque
 
+use base64::Engine as _;
 use crate::InterceptedRequest;
 use anyhow::Result;
 use std::path::PathBuf;
@@ -101,7 +102,7 @@ fn build_har(requests: &[InterceptedRequest]) -> serde_json::Value {
                     "httpVersion": r.http_version,
                     "headers": r.request_headers.iter().map(|(k,v)| serde_json::json!({"name":k,"value":v})).collect::<Vec<_>>(),
                     "queryString": [],
-                    "postData": r.request_body.as_ref().map(|b| serde_json::json!({"mimeType":"application/octet-stream","text": base64::encode(b)})),
+                    "postData": r.request_body.as_ref().map(|b| serde_json::json!({"mimeType":"application/octet-stream","text": base64::engine::general_purpose::STANDARD.encode(b)})),
                     "headersSize": -1,
                     "bodySize": r.request_body.as_ref().map(|b| b.len()).unwrap_or(0)
                 },
@@ -113,7 +114,7 @@ fn build_har(requests: &[InterceptedRequest]) -> serde_json::Value {
                     "content": {
                         "size": r.response_body.as_ref().map(|b| b.len()).unwrap_or(0),
                         "mimeType": "application/octet-stream",
-                        "text": r.response_body.as_ref().map(|b| base64::encode(b)).unwrap_or_default()
+                        "text": r.response_body.as_ref().map(|b| base64::engine::general_purpose::STANDARD.encode(b)).unwrap_or_default()
                     },
                     "redirectURL": "",
                     "headersSize": -1,
