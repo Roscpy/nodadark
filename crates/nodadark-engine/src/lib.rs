@@ -193,13 +193,15 @@ impl ProxyEngine {
             })
         };
 
-        tokio::select! {
-            res = proxy_handle => {
-                if let Ok(Err(e)) = res { tracing::error!("Proxy error: {e}"); }
+        // API en arrière-plan
+        tokio::spawn(async move {
+            if let Ok(Err(e)) = api_handle.await {
+                tracing::warn!("API non-fatal: {e}");
             }
-            res = api_handle => {
-                if let Ok(Err(e)) = res { tracing::error!("API error: {e}"); }
-            }
+        });
+        // Proxy garde le process vivant
+        if let Ok(Err(e)) = proxy_handle.await {
+            tracing::error!("Proxy error: {e}");
         }
 
         Ok(())
