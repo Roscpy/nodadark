@@ -49,18 +49,20 @@ async fn run_loop(
     engine: &mut EngineClient,
 ) -> Result<()> {
     loop {
-        // Rendu de l'interface
-        term.draw(|f| ui::render(f, app))?;
+        // Rendu — block séparé pour libérer le borrow
+        {
+            term.draw(|f| ui::render(f, app))?;
+        }
 
-        // Événements avec timeout court pour rester réactif
-        if event::poll(Duration::from_millis(50))? {
+        // Événements clavier avec timeout court
+        if event::poll(Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
-                // Quitter avec 'q' ou Ctrl+C
                 if key.code == KeyCode::Char('q') && !app.is_editing() {
                     break;
                 }
                 if key.code == KeyCode::Char('c')
-                    && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                    && key.modifiers.contains(
+                        crossterm::event::KeyModifiers::CONTROL)
                 {
                     break;
                 }
@@ -68,10 +70,9 @@ async fn run_loop(
             }
         }
 
-        // Vider les messages en attente du moteur
+        // Vider le channel d'événements moteur
         engine.poll_messages(app).await;
     }
-
     Ok(())
 }
 
