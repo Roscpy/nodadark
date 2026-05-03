@@ -1,67 +1,144 @@
 // nodadark-tui/src/network.rs
-// Client de connexion au moteur NodaDark
+// Fix: 2 connexions séparées — commandes + événements live
 
 use crate::state::AppState;
 use anyhow::Result;
 use nodadark_engine::{EngineEvent, InterceptedRequest};
-use std::collections::VecDeque;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc;
 
 pub struct EngineClient {
-    kind: ClientKind,
+    cmd_kind: CmdKind,
+    event_rx: Option<mpsc::UnboundedReceiver<String>>,
 }
 
-enum ClientKind {
-    Unix(UnixConn),
-    Tcp(TcpConn),
+enum CmdKind {
+    Unix(tokio::net::unix::OwnedWriteHalf),
+    Tcp(tokio::net::tcp::OwnedWriteHalf),
     Demo,
-}
-
-struct UnixConn {
-    writer: tokio::net::unix::OwnedWriteHalf,
-    lines:  tokio::io::Lines<BufReader<tokio::net::unix::OwnedReadHalf>>,
-}
-
-struct TcpConn {
-    writer: tokio::net::tcp::OwnedWriteHalf,
-    lines:  tokio::io::Lines<BufReader<tokio::net::tcp::OwnedReadHalf>>,
 }
 
 impl EngineClient {
     #[cfg(unix)]
     pub async fn connect_unix(path: &str) -> Result<Self> {
-        let stream = tokio::net::UnixStream::connect(path).await?;
-        let (r, w) = stream.into_split();
+        // Connexion 1 — commandes
+        let stream1 = tokio::net::UnixStream::connect(path).await?;
+        let (r1, w1) = stream1.into_split();
+        // Lire et ignorer le welcome
+        let mut lines1 = BufReader::new(r1).lines();
+        let _ = lines1.next_line().await;
+
+        // Connexion 2 — événements live
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let path_owned = path.to_string();
+        tokio::spawn(async move {
+            if let Ok(stream2) = tokio::net::UnixStream::connect(&path_owned).await {
+                let (r2, mut w2) = stream2.into_split();
+                // Envoyer subscribe
+                let _ = w2.write_all(b"{\"command\":\"subscribe\"}\n").await;
+                let mut lines2 = BufReader::new(r2).lines();
+                while let Ok(Some(line)) = lines2.next_line().await {
+                    if tx.send(line).is_err() { break; }
+                }
+            }
+        });
+
+        // Aussi lire les réponses de la connexion commandes en arrière-plan
+        let (tx2, rx2) = mpsc::unbounded_channel::<String>();
+        tokio::spawn(async move {
+            while let Ok(Some(line)) = lines1.next_line().await {
+                if tx2.send(line).is_err() { break; }
+            }
+        });
+
+        // Merger les deux channels dans rx_merged
+        let (tx_merged, rx_merged) = mpsc::unbounded_channel::<String>();
+        let tx_m1 = tx_merged.clone();
+        let tx_m2 = tx_merged.clone();
+
+        // Re-forward rx → tx_merged
+        tokio::spawn(async move {
+            let mut rx = rx;
+            while let Some(msg) = rx.recv().await {
+                if tx_m1.send(msg).is_err() { break; }
+            }
+        });
+        tokio::spawn(async move {
+            let mut rx = rx2;
+            while let Some(msg) = rx.recv().await {
+                if tx_m2.send(msg).is_err() { break; }
+            }
+        });
+
         Ok(Self {
-            kind: ClientKind::Unix(UnixConn {
-                writer: w,
-                lines:  BufReader::new(r).lines(),
-            }),
+            cmd_kind: CmdKind::Unix(w1),
+            event_rx: Some(rx_merged),
         })
     }
 
     pub async fn connect_tcp(addr: &str) -> Result<Self> {
-        let stream = tokio::net::TcpStream::connect(addr).await?;
-        let (r, w) = stream.into_split();
+        // Connexion 1 — commandes
+        let stream1 = tokio::net::TcpStream::connect(addr).await?;
+        let (r1, w1) = stream1.into_split();
+        let mut lines1 = BufReader::new(r1).lines();
+        // Lire welcome
+        let _ = lines1.next_line().await;
+
+        // Connexion 2 — événements
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let addr_owned = addr.to_string();
+        tokio::spawn(async move {
+            if let Ok(stream2) = tokio::net::TcpStream::connect(&addr_owned).await {
+                let (r2, mut w2) = stream2.into_split();
+                let _ = w2.write_all(b"{\"command\":\"subscribe\"}\n").await;
+                let mut lines2 = BufReader::new(r2).lines();
+                while let Ok(Some(line)) = lines2.next_line().await {
+                    if tx.send(line).is_err() { break; }
+                }
+            }
+        });
+
+        // Réponses commandes
+        let (tx2, rx2) = mpsc::unbounded_channel::<String>();
+        tokio::spawn(async move {
+            while let Ok(Some(line)) = lines1.next_line().await {
+                if tx2.send(line).is_err() { break; }
+            }
+        });
+
+        let (tx_merged, rx_merged) = mpsc::unbounded_channel::<String>();
+        let tx_m1 = tx_merged.clone();
+        let tx_m2 = tx_merged.clone();
+        tokio::spawn(async move {
+            let mut rx = rx;
+            while let Some(msg) = rx.recv().await {
+                if tx_m1.send(msg).is_err() { break; }
+            }
+        });
+        tokio::spawn(async move {
+            let mut rx = rx2;
+            while let Some(msg) = rx.recv().await {
+                if tx_m2.send(msg).is_err() { break; }
+            }
+        });
+
         Ok(Self {
-            kind: ClientKind::Tcp(TcpConn {
-                writer: w,
-                lines:  BufReader::new(r).lines(),
-            }),
+            cmd_kind: CmdKind::Tcp(w1),
+            event_rx: Some(rx_merged),
         })
     }
 
     pub fn demo_mode() -> Self {
-        Self { kind: ClientKind::Demo }
+        Self { cmd_kind: CmdKind::Demo, event_rx: None }
     }
 
     pub async fn send_command(&mut self, cmd: &serde_json::Value) {
         let json = serde_json::to_string(cmd).unwrap_or_default();
         let line = format!("{json}\n");
-        match &mut self.kind {
-            ClientKind::Unix(c) => { let _ = c.writer.write_all(line.as_bytes()).await; }
-            ClientKind::Tcp(c)  => { let _ = c.writer.write_all(line.as_bytes()).await; }
-            ClientKind::Demo    => {}
+        match &mut self.cmd_kind {
+            CmdKind::Unix(w) => { let _ = w.write_all(line.as_bytes()).await; }
+            CmdKind::Tcp(w)  => { let _ = w.write_all(line.as_bytes()).await; }
+            CmdKind::Demo    => {}
         }
     }
 
@@ -89,36 +166,18 @@ impl EngineClient {
         self.send_command(&serde_json::json!({"command":"clear_requests"})).await;
     }
 
-    /// Poll non-bloquant : lit les messages disponibles et met à jour l'état
+    /// Poll non-bloquant — lit les messages du channel et met à jour l'état
     pub async fn poll_messages(&mut self, app: &mut AppState) {
-        for _ in 0..20 {
-            match self.try_read_line().await {
-                Some(line) if !line.is_empty() => self.process_line(&line, app),
+        let rx = match &mut self.event_rx {
+            Some(r) => r,
+            None    => return,
+        };
+        // Vider jusqu'à 50 messages par frame
+        for _ in 0..50 {
+            match rx.try_recv() {
+                Ok(line) if !line.is_empty() => self.process_line(&line, app),
                 _ => break,
             }
-        }
-    }
-
-    async fn try_read_line(&mut self) -> Option<String> {
-        use tokio::time::{timeout, Duration};
-        match &mut self.kind {
-            // Fix E0599 : .ok().and_then(|r| r.ok()).flatten()
-            // pour dérouler Result<Result<Option<String>, io::Error>, Elapsed> -> Option<String>
-            ClientKind::Unix(c) => {
-                timeout(Duration::from_millis(1), c.lines.next_line())
-                    .await
-                    .ok()
-                    .and_then(|res| res.ok())
-                    .flatten()
-            }
-            ClientKind::Tcp(c) => {
-                timeout(Duration::from_millis(1), c.lines.next_line())
-                    .await
-                    .ok()
-                    .and_then(|res| res.ok())
-                    .flatten()
-            }
-            ClientKind::Demo => None,
         }
     }
 
@@ -148,15 +207,20 @@ impl EngineClient {
                 Some("welcome") => {
                     app.engine_connected = true;
                     app.proxy_port = resp["proxy_port"].as_u64().unwrap_or(8080) as u16;
-                    app.status_message = Some(format!("Connecte -- Proxy :{}", app.proxy_port));
+                    app.status_message = Some(
+                        format!("Connecte -- Proxy :{}", app.proxy_port)
+                    );
                 }
                 Some("ok") => {
-                    app.status_message = resp["message"].as_str().map(|m| format!("OK: {m}"));
+                    app.status_message = resp["message"]
+                        .as_str().map(|m| format!("OK: {m}"));
                 }
                 Some("error") => {
-                    app.status_message = resp["message"].as_str().map(|m| format!("ERR: {m}"));
+                    app.status_message = resp["message"]
+                        .as_str().map(|m| format!("ERR: {m}"));
                 }
                 _ => {
+                    // Événements live du moteur
                     if let Ok(event) = serde_json::from_str::<EngineEvent>(line) {
                         app.handle_engine_event(event);
                     }
