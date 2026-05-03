@@ -168,19 +168,25 @@ impl EngineClient {
 
     /// Poll non-bloquant — lit les messages du channel et met à jour l'état
     pub async fn poll_messages(&mut self, app: &mut AppState) {
-        let rx = match &mut self.event_rx {
-            Some(r) => r,
-            None    => return,
-        };
-        // Vider jusqu'à 50 messages par frame
-        for _ in 0..50 {
-            match rx.try_recv() {
-                Ok(line) if !line.is_empty() => self.process_line(&line, app),
-                _ => break,
+        // Fix E0502 : collecter d'abord, traiter ensuite
+        // évite le double borrow sur self
+        let mut lines_to_process: Vec<String> = Vec::new();
+
+        if let Some(rx) = &mut self.event_rx {
+            for _ in 0..50 {
+                match rx.try_recv() {
+                    Ok(line) if !line.is_empty() => {
+                        lines_to_process.push(line);
+                    }
+                    _ => break,
+                }
             }
         }
+        // self.event_rx n'est plus borrowé ici
+        for line in lines_to_process {
+            self.process_line(&line, app);
+        }
     }
-
     fn process_line(&self, line: &str, app: &mut AppState) {
         if let Ok(resp) = serde_json::from_str::<serde_json::Value>(line) {
             match resp.get("type").and_then(|t| t.as_str()) {
