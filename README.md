@@ -258,7 +258,7 @@ cargo --version
 
 ```bash
 # 1. Cloner le projet
-git clone https://github.com/ton-user/nodadark.git
+git clone https://github.com/Roscpy/nodadark.git
 cd nodadark
 
 # 2. Compiler le moteur + le TUI (en une commande)
@@ -289,7 +289,7 @@ pkg update && pkg upgrade
 pkg install rust binutils openssl-dev pkg-config
 
 # 2. Cloner et compiler (TUI uniquement, pas de Desktop sans bureau graphique)
-git clone https://github.com/ton-user/nodadark.git
+git clone https://github.com/Roscpy/nodadark.git
 cd nodadark
 cargo build --release -p nodadark-tui
 
