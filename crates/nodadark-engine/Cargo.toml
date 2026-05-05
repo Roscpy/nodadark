@@ -42,3 +42,4 @@ dashmap        = "5"
 toml           = "0.8"
 dirs           = "5"
 base64         = "0.21"
+clap = { version = "4.6.1", features = ["derive"] }
