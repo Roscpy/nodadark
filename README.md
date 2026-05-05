@@ -1019,12 +1019,9 @@ R : Vérifie que le moteur tourne (`nodadark --port 8080`) et que le socket exis
 *NodaDark v0.1.0 — "One Core, Many Faces" — Fait avec ❤ en Rust sur Samsung A15 / Termux*
 
 ---
-
-## 📸 Screenshots — NodaDark en Action (Tests Réels)
-
-> Toutes les captures ci-dessous ont été prises sur un **Samsung A15 Android**  
-> avec **Termux**, en **4G** (sans Wi-Fi), le **03 Mai 2026**.
-
+  ╔═╗╔╗╔╔═╗╔╦╗╔═╗╔╦╗╔═╗╦═╗╦╔═
+  ║  ║║║║ ║ ║║╠═╣ ║║╠═╣╠╦╝╠╩╗
+  ╚═╝╝╚╝╚═╝═╩╝╩ ╩═╩╝╩ ╩╩╚═╩ ╩
 ---
 
 ### 1. Liste live — Interception de google.com, github.com et cloudflare.com
