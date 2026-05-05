@@ -11,7 +11,7 @@
 
   ⚠  À utiliser uniquement sur des réseaux autorisés.
 
->>>>>>> 3086416 (docs: README complet + screenshots réels)
+
 ```
 
 ---
@@ -428,7 +428,7 @@ sudo update-ca-certificates
 
 # Arch / Fedora
 sudo trust anchor --store ~/.config/nodadark/certs/nodadark-ca.crt
->>>>>>> 3086416 (docs: README complet + screenshots réels)
+
 ```
 
 ---
