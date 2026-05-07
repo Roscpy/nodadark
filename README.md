@@ -1114,22 +1114,6 @@ Hex Viewer (255 octets)
 
 ---
 
-### Comment placer les screenshots dans le repo
-
-```bash
-# Créer le dossier dans ton repo GitHub
-mkdir -p docs/screenshots
-
-# Copier tes screenshots dedans
-cp screenshot_*.jpg docs/screenshots/
-
-# Commit
-git add docs/screenshots/
-git commit -m "feat: add real demo screenshots"
-git push
-```
-
-
 > ⚠ **NodaDark est un outil d'audit de sécurité réseau.**  
 > Son utilisation est **strictement réservée** aux réseaux et appareils sur lesquels tu as une autorisation explicite.  
 > Intercepter le trafic réseau sans autorisation est **illégal** dans la plupart des pays.  
