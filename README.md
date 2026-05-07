@@ -915,7 +915,6 @@ Le format HAR (HTTP Archive) est compatible avec :
 
 ```bash
 echo '{"command":"export_har","name":"audit"}' | nc -q1 127.0.0.1 9090
- (docs: README complet + screenshots réels)
 ```
 
 ---
