@@ -140,7 +140,7 @@ impl RulesEngine {
         true
     }
 
-    fn rules_path(config: &Arc<ProxyConfig>) -> PathBuf {
+    fn rules_path(_config: &Arc<ProxyConfig>) -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("nodadark")

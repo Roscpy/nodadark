@@ -10,6 +10,8 @@ pub enum ActivePanel {
     Search,
     PopupAction,
     PopupCookieEditor,
+    #[allow(dead_code)]
+    #[allow(dead_code)]
     PopupConfirmReplay,
 }
 
@@ -24,6 +26,8 @@ pub struct AppState {
     // ── Liste des requêtes ──────────────────────────────────
     pub requests: VecDeque<InterceptedRequest>,
     pub list_offset: usize,       // Index de la sélection dans la liste
+    #[allow(dead_code)]
+    #[allow(dead_code)]
     pub list_scroll: usize,       // Scroll dans la liste (premier item visible)
 
     // ── Détail ──────────────────────────────────────────────
@@ -132,7 +136,7 @@ impl AppState {
                 };
                 self.upsert_request(req);
             }
-            EngineEvent::Response { id, status, duration_ms, size } => {
+            EngineEvent::Response { id, status, duration_ms, size: _ } => {
                 if let Some(pos) = self.requests.iter().position(|r| r.id == id) {
                     self.requests[pos].response_status = Some(status);
                     self.requests[pos].duration_ms = Some(duration_ms);
