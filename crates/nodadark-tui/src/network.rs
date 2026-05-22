@@ -1,6 +1,3 @@
-// nodadark-tui/src/network.rs
-// Fix: 2 connexions séparées — commandes + événements live
-
 use crate::state::AppState;
 use anyhow::Result;
 use nodadark_engine::{EngineEvent, InterceptedRequest};
@@ -21,20 +18,16 @@ enum CmdKind {
 impl EngineClient {
     #[cfg(unix)]
     pub async fn connect_unix(path: &str) -> Result<Self> {
-        // Connexion 1 — commandes
         let stream1 = tokio::net::UnixStream::connect(path).await?;
         let (r1, w1) = stream1.into_split();
-        // Lire et ignorer le welcome
         let mut lines1 = BufReader::new(r1).lines();
         let _ = lines1.next_line().await;
 
-        // Connexion 2 — événements live
         let (tx, rx) = mpsc::unbounded_channel::<String>();
         let path_owned = path.to_string();
         tokio::spawn(async move {
             if let Ok(stream2) = tokio::net::UnixStream::connect(&path_owned).await {
                 let (r2, mut w2) = stream2.into_split();
-                // Envoyer subscribe
                 let _ = w2.write_all(b"{\"command\":\"subscribe\"}\n").await;
                 let mut lines2 = BufReader::new(r2).lines();
                 while let Ok(Some(line)) = lines2.next_line().await {
@@ -43,7 +36,6 @@ impl EngineClient {
             }
         });
 
-        // Aussi lire les réponses de la connexion commandes en arrière-plan
         let (tx2, rx2) = mpsc::unbounded_channel::<String>();
         tokio::spawn(async move {
             while let Ok(Some(line)) = lines1.next_line().await {
@@ -51,12 +43,9 @@ impl EngineClient {
             }
         });
 
-        // Merger les deux channels dans rx_merged
         let (tx_merged, rx_merged) = mpsc::unbounded_channel::<String>();
         let tx_m1 = tx_merged.clone();
         let tx_m2 = tx_merged.clone();
-
-        // Re-forward rx → tx_merged
         tokio::spawn(async move {
             let mut rx = rx;
             while let Some(msg) = rx.recv().await {
@@ -70,21 +59,15 @@ impl EngineClient {
             }
         });
 
-        Ok(Self {
-            cmd_kind: CmdKind::Unix(w1),
-            event_rx: Some(rx_merged),
-        })
+        Ok(Self { cmd_kind: CmdKind::Unix(w1), event_rx: Some(rx_merged) })
     }
 
     pub async fn connect_tcp(addr: &str) -> Result<Self> {
-        // Connexion 1 — commandes
         let stream1 = tokio::net::TcpStream::connect(addr).await?;
         let (r1, w1) = stream1.into_split();
         let mut lines1 = BufReader::new(r1).lines();
-        // Lire welcome
         let _ = lines1.next_line().await;
 
-        // Connexion 2 — événements
         let (tx, rx) = mpsc::unbounded_channel::<String>();
         let addr_owned = addr.to_string();
         tokio::spawn(async move {
@@ -98,7 +81,6 @@ impl EngineClient {
             }
         });
 
-        // Réponses commandes
         let (tx2, rx2) = mpsc::unbounded_channel::<String>();
         tokio::spawn(async move {
             while let Ok(Some(line)) = lines1.next_line().await {
@@ -122,10 +104,7 @@ impl EngineClient {
             }
         });
 
-        Ok(Self {
-            cmd_kind: CmdKind::Tcp(w1),
-            event_rx: Some(rx_merged),
-        })
+        Ok(Self { cmd_kind: CmdKind::Tcp(w1), event_rx: Some(rx_merged) })
     }
 
     pub fn demo_mode() -> Self {
@@ -166,27 +145,42 @@ impl EngineClient {
         self.send_command(&serde_json::json!({"command":"clear_requests"})).await;
     }
 
-    /// Poll non-bloquant — lit les messages du channel et met à jour l'état
     pub async fn poll_messages(&mut self, app: &mut AppState) {
-        // Fix E0502 : collecter d'abord, traiter ensuite
-        // évite le double borrow sur self
         let mut lines_to_process: Vec<String> = Vec::new();
-
         if let Some(rx) = &mut self.event_rx {
             for _ in 0..50 {
                 match rx.try_recv() {
-                    Ok(line) if !line.is_empty() => {
-                        lines_to_process.push(line);
-                    }
+                    Ok(line) if !line.is_empty() => lines_to_process.push(line),
                     _ => break,
                 }
             }
         }
-        // self.event_rx n'est plus borrowé ici
+
+        // Fix body vide — collecter les IDs des réponses complètes
+        // pour auto-fetch le détail complet (headers + body)
+        let mut ids_to_fetch: Vec<String> = Vec::new();
+        for line in &lines_to_process {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                if v.get("type").and_then(|t| t.as_str()) == Some("response") {
+                    if let Some(id) = v.get("id").and_then(|i| i.as_str()) {
+                        ids_to_fetch.push(id.to_string());
+                    }
+                }
+            }
+        }
+
+        // Traiter les messages
         for line in lines_to_process {
             self.process_line(&line, app);
         }
+
+        // Auto-fetch le détail complet pour chaque requête terminée
+        // → le body apparaît automatiquement sans appuyer sur i
+        for id in ids_to_fetch {
+            self.get_request(&id).await;
+        }
     }
+
     fn process_line(&self, line: &str, app: &mut AppState) {
         if let Ok(resp) = serde_json::from_str::<serde_json::Value>(line) {
             match resp.get("type").and_then(|t| t.as_str()) {
@@ -226,7 +220,6 @@ impl EngineClient {
                         .as_str().map(|m| format!("ERR: {m}"));
                 }
                 _ => {
-                    // Événements live du moteur
                     if let Ok(event) = serde_json::from_str::<EngineEvent>(line) {
                         app.handle_engine_event(event);
                     }

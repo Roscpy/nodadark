@@ -1,5 +1,6 @@
 // nodadark-engine/src/proxy/server.rs
 // Serveur proxy HTTP/HTTPS avec interception MITM
+// NodaDark v0.1.5 — 0 warnings
 
 use crate::{
     proxy::{cert::CertificateAuthority, ProxyState},
@@ -7,8 +8,6 @@ use crate::{
     EngineEvent, InterceptedRequest, ProxyConfig, RequestState,
 };
 use anyhow::Result;
-use bytes::Bytes;
-use futures::TryFutureExt;
 use hyper::{
     body::to_bytes,
     client::HttpConnector,
@@ -17,11 +16,11 @@ use hyper::{
     Body, Client, Method, Request, Response, StatusCode, Uri,
 };
 use hyper_rustls::HttpsConnector;
-use rustls::{ServerConfig, ServerName};
+use rustls::ServerConfig;
 use std::{
     net::SocketAddr,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Instant,
 };
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -42,7 +41,6 @@ pub async fn run_proxy(
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("Proxy en écoute sur {addr}");
 
-    // Client HTTP(S) pour les requêtes sortantes
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()
         .https_or_http()
@@ -50,8 +48,6 @@ pub async fn run_proxy(
         .enable_http2()
         .build();
     let client: HttpClient = Client::builder().build(https);
-
-    // Moteur de règles
     let rules = Arc::new(RulesEngine::load_or_default(&config));
 
     loop {
@@ -75,8 +71,9 @@ pub async fn run_proxy(
     }
 }
 
+// Fix warning: mut stream → stream (pas besoin de mut)
 async fn handle_connection(
-    mut stream: TcpStream,
+    stream: TcpStream,
     config: Arc<ProxyConfig>,
     state: Arc<ProxyState>,
     ca: Arc<CertificateAuthority>,
@@ -84,8 +81,6 @@ async fn handle_connection(
     client: HttpClient,
     rules: Arc<RulesEngine>,
 ) -> Result<()> {
-    // Lire la première requête pour déterminer si c'est un CONNECT (HTTPS)
-    // ou une requête HTTP normale
     let service = service_fn(move |req: Request<Body>| {
         let config = config.clone();
         let state  = state.clone();
@@ -110,10 +105,6 @@ async fn handle_connection(
         .map_err(|e| anyhow::anyhow!(e))
 }
 
-// ────────────────────────────────────────────────────────────
-//  Tunnel HTTPS (méthode CONNECT)
-// ────────────────────────────────────────────────────────────
-
 async fn handle_https_tunnel(
     req: Request<Body>,
     _config: Arc<ProxyConfig>,
@@ -131,11 +122,9 @@ async fn handle_https_tunnel(
 
     tracing::debug!("CONNECT vers {host}");
 
-    // Répondre 200 Connection Established pour accepter le tunnel
     tokio::task::spawn(async move {
         match hyper::upgrade::on(req).await {
             Ok(upgraded) => {
-                // Obtenir le certificat pour cet hôte
                 let tls_cert = match ca.get_or_create_for_host(&host) {
                     Ok(c) => c,
                     Err(e) => {
@@ -144,27 +133,25 @@ async fn handle_https_tunnel(
                     }
                 };
 
-                // Configurer TLS serveur (vers le client)
                 let server_config = build_server_tls_config(&tls_cert);
                 let acceptor = TlsAcceptor::from(Arc::new(server_config));
 
                 match acceptor.accept(upgraded).await {
                     Ok(tls_stream) => {
-                        // Servir les requêtes HTTPS via ce flux TLS
                         let host_clone = host.clone();
                         let service = service_fn(move |mut inner_req: Request<Body>| {
-                            let host = host_clone.clone();
-                            let state = state.clone();
-                            let tx    = tx.clone();
+                            let host   = host_clone.clone();
+                            let state  = state.clone();
+                            let tx     = tx.clone();
                             let client = client.clone();
                             let rules  = rules.clone();
 
-                            // Reconstruire l'URL complète
                             if inner_req.uri().scheme().is_none() {
                                 let full_uri = format!(
                                     "https://{}{}",
                                     host,
-                                    inner_req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/")
+                                    inner_req.uri().path_and_query()
+                                        .map(|p| p.as_str()).unwrap_or("/")
                                 );
                                 if let Ok(uri) = full_uri.parse::<Uri>() {
                                     *inner_req.uri_mut() = uri;
@@ -172,9 +159,11 @@ async fn handle_https_tunnel(
                             }
 
                             async move {
-                                handle_http_request(inner_req, 
+                                handle_http_request(
+                                    inner_req,
                                     Arc::new(ProxyConfig::default()),
-                                    state, tx, client, rules).await
+                                    state, tx, client, rules,
+                                ).await
                             }
                         });
 
@@ -186,9 +175,7 @@ async fn handle_https_tunnel(
                             tracing::debug!("TLS connection error pour {host}: {e}");
                         }
                     }
-                    Err(e) => {
-                        tracing::warn!("TLS handshake échoué pour {host}: {e}");
-                    }
+                    Err(e) => tracing::warn!("TLS handshake échoué pour {host}: {e}"),
                 }
             }
             Err(e) => tracing::error!("Upgrade échoué: {e}"),
@@ -200,10 +187,6 @@ async fn handle_https_tunnel(
         .body(Body::empty())
         .unwrap())
 }
-
-// ────────────────────────────────────────────────────────────
-//  Requête HTTP ordinaire
-// ────────────────────────────────────────────────────────────
 
 async fn handle_http_request(
     req: Request<Body>,
@@ -222,17 +205,14 @@ async fn handle_http_request(
     let tls       = uri.scheme_str() == Some("https");
     let http_ver  = format!("{:?}", req.version());
     let timestamp = chrono::Utc::now();
+    let start     = Instant::now();
 
-    let start = Instant::now();
-
-    // Capturer les headers
     let req_headers: Vec<(String, String)> = req
         .headers()
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
 
-    // Lire le body de la requête
     let (req_parts, req_body) = req.into_parts();
     let req_body_bytes = to_bytes(req_body).await.unwrap_or_default();
     let req_body_data = if req_body_bytes.is_empty() {
@@ -241,7 +221,6 @@ async fn handle_http_request(
         Some(req_body_bytes.to_vec())
     };
 
-    // Enregistrer la requête entrante
     let intercepted = InterceptedRequest {
         id: id.clone(),
         method: method.clone(),
@@ -262,7 +241,6 @@ async fn handle_http_request(
     };
     state.upsert(intercepted);
 
-    // Émettre l'événement "nouvelle requête"
     let _ = tx.send(EngineEvent::Request {
         id: id.clone(),
         method: method.clone(),
@@ -272,7 +250,6 @@ async fn handle_http_request(
         tls,
     });
 
-    // Appliquer les règles (drop, modifier, etc.)
     let action = rules.evaluate(&host, &path, &req_headers);
     if let crate::rules::RuleAction::Drop = action {
         let _ = tx.send(EngineEvent::Dropped { id: id.clone() });
@@ -283,9 +260,7 @@ async fn handle_http_request(
             .unwrap());
     }
 
-    // Reconstruire la requête pour la transmettre
     let mut forward_req = Request::from_parts(req_parts, Body::from(req_body_bytes));
-    // Appliquer les modifications de règles sur les headers
     if let crate::rules::RuleAction::ModifyHeaders(mods) = action {
         for (k, v) in &mods {
             if let (Ok(name), Ok(val)) = (
@@ -297,7 +272,6 @@ async fn handle_http_request(
         }
     }
 
-    // Envoyer la requête au serveur cible
     let response = match client.request(forward_req).await {
         Ok(r) => r,
         Err(e) => {
@@ -311,7 +285,6 @@ async fn handle_http_request(
                 req_entry.state = RequestState::Error;
                 req_entry.error = Some(err_str.clone());
             }
-            // Fail-open : retourner une erreur lisible
             return Ok(Response::builder()
                 .status(StatusCode::BAD_GATEWAY)
                 .body(Body::from(format!("NodaDark: {err_str}")))
@@ -320,23 +293,23 @@ async fn handle_http_request(
     };
 
     let duration_ms = start.elapsed().as_millis() as u64;
-    let status = response.status().as_u16();
+    let status      = response.status().as_u16();
     let resp_headers: Vec<(String, String)> = response
         .headers()
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
 
-    // Lire le body de la réponse (attention aux gros fichiers)
-    let content_type = response
+    // Fix warning: content_type → _content_type (utilisé dans future version)
+    let _content_type = response
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
 
-    let (resp_parts, resp_body) = response.into_parts();
-    let resp_body_bytes = to_bytes(resp_body).await.unwrap_or_default();
+    let (resp_parts, resp_body_bytes_raw) = response.into_parts();
+    let resp_body_bytes = to_bytes(resp_body_bytes_raw).await.unwrap_or_default();
     let resp_body_data = if resp_body_bytes.is_empty() {
         None
     } else {
@@ -344,7 +317,6 @@ async fn handle_http_request(
     };
     let size = resp_body_data.as_ref().map(|b| b.len()).unwrap_or(0);
 
-    // Mettre à jour la requête avec la réponse
     if let Some(mut req_entry) = state.requests.get_mut(&id) {
         req_entry.response_status  = Some(status);
         req_entry.response_headers = resp_headers.clone();
@@ -360,11 +332,7 @@ async fn handle_http_request(
         size,
     });
 
-    // Renvoyer la réponse au client
-    Ok(Response::from_parts(
-        resp_parts,
-        Body::from(resp_body_bytes),
-    ))
+    Ok(Response::from_parts(resp_parts, Body::from(resp_body_bytes)))
 }
 
 fn build_server_tls_config(cert: &crate::proxy::cert::CachedCert) -> ServerConfig {

@@ -1,5 +1,5 @@
 // nodadark-tui/src/events.rs
-// Gestion des événements clavier (style Vim)
+// NodaDark v0.1.5 — F1/F2/F3 filtres rapides + x HAR export
 
 use crate::{
     network::EngineClient,
@@ -10,10 +10,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub async fn handle_key(key: KeyEvent, app: &mut AppState, engine: &mut EngineClient) -> Result<()> {
     match &app.active_panel {
-        ActivePanel::RequestList => handle_list_keys(key, app, engine).await,
-        ActivePanel::RequestDetail => handle_detail_keys(key, app, engine).await,
-        ActivePanel::Search => handle_search_keys(key, app),
-        ActivePanel::PopupAction => handle_popup_action_keys(key, app, engine).await,
+        ActivePanel::RequestList       => handle_list_keys(key, app, engine).await,
+        ActivePanel::RequestDetail     => handle_detail_keys(key, app, engine).await,
+        ActivePanel::Search            => handle_search_keys(key, app),
+        ActivePanel::PopupAction       => handle_popup_action_keys(key, app, engine).await,
         ActivePanel::PopupCookieEditor => handle_cookie_editor_keys(key, app),
         ActivePanel::PopupConfirmReplay => handle_confirm_replay_keys(key, app, engine).await,
     }
@@ -22,24 +22,58 @@ pub async fn handle_key(key: KeyEvent, app: &mut AppState, engine: &mut EngineCl
 
 async fn handle_list_keys(key: KeyEvent, app: &mut AppState, engine: &mut EngineClient) {
     match key.code {
-        // Navigation Vim
         KeyCode::Char('j') | KeyCode::Down => app.select_down(),
         KeyCode::Char('k') | KeyCode::Up   => app.select_up(),
 
-        // Ouvrir le détail
         KeyCode::Enter => app.open_detail(),
 
-        // Popup d'actions
         KeyCode::Char('a') => app.open_action_popup(),
 
-        // Recherche / filtre
         KeyCode::Char('/') => {
             app.search_active = true;
             app.search_input.clear();
             app.active_panel = ActivePanel::Search;
         }
 
-        // Pause / Reprise
+        // F1 — filtrer seulement les erreurs 4xx/5xx
+        KeyCode::F(1) => {
+            app.filter_text = "4".into();
+            app.list_offset = 0;
+            app.status_message = Some("F1 — Filtre: erreurs 4xx/5xx".into());
+        }
+
+        // F2 — filtrer seulement les POST
+        KeyCode::F(2) => {
+            app.filter_text = "POST".into();
+            app.list_offset = 0;
+            app.status_message = Some("F2 — Filtre: requêtes POST".into());
+        }
+
+        // F3 — filtrer seulement HTTPS
+        KeyCode::F(3) => {
+            app.filter_text = "https".into();
+            app.list_offset = 0;
+            app.status_message = Some("F3 — Filtre: requêtes HTTPS".into());
+        }
+
+        // Esc — effacer le filtre actif
+        KeyCode::Esc => {
+            if !app.filter_text.is_empty() {
+                app.filter_text.clear();
+                app.list_offset = 0;
+                app.status_message = Some("Filtre effacé".into());
+            }
+        }
+
+        // x — export HAR
+        KeyCode::Char('x') => {
+            engine.send_command(&serde_json::json!({
+                "command": "export_har",
+                "name": "nodadark_export"
+            })).await;
+            app.status_message = Some("📦 Export HAR lancé → ~/.local/share/nodadark/".into());
+        }
+
         KeyCode::Char('p') => {
             if app.proxy_paused {
                 engine.resume().await;
@@ -52,7 +86,6 @@ async fn handle_list_keys(key: KeyEvent, app: &mut AppState, engine: &mut Engine
             }
         }
 
-        // Drop direct (dd style Vim)
         KeyCode::Char('d') => {
             if let Some(req) = app.get_selected() {
                 let id = req.id.clone();
@@ -61,7 +94,6 @@ async fn handle_list_keys(key: KeyEvent, app: &mut AppState, engine: &mut Engine
             }
         }
 
-        // Replay direct
         KeyCode::Char('r') => {
             if let Some(req) = app.get_selected() {
                 let id = req.id.clone();
@@ -70,7 +102,6 @@ async fn handle_list_keys(key: KeyEvent, app: &mut AppState, engine: &mut Engine
             }
         }
 
-        // Récupérer le détail complet depuis le moteur
         KeyCode::Char('i') => {
             if let Some(req) = app.get_selected() {
                 let id = req.id.clone();
@@ -78,7 +109,6 @@ async fn handle_list_keys(key: KeyEvent, app: &mut AppState, engine: &mut Engine
             }
         }
 
-        // Effacer tout
         KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
             engine.clear().await;
             app.requests.clear();
@@ -86,39 +116,27 @@ async fn handle_list_keys(key: KeyEvent, app: &mut AppState, engine: &mut Engine
             app.status_message = Some("🗑  Historique effacé".into());
         }
 
-        // Aller au dernier item
         KeyCode::Char('G') => {
             let count = app.filtered_requests().len();
-            if count > 0 {
-                app.list_offset = count - 1;
-            }
+            if count > 0 { app.list_offset = count - 1; }
         }
 
-        // Aller au premier item
-        KeyCode::Char('g') => {
-            app.list_offset = 0;
-        }
+        KeyCode::Char('g') => { app.list_offset = 0; }
 
-        // Page bas / haut
-        KeyCode::PageDown => {
-            for _ in 0..10 { app.select_down(); }
-        }
-        KeyCode::PageUp => {
-            for _ in 0..10 { app.select_up(); }
-        }
+        KeyCode::PageDown => { for _ in 0..10 { app.select_down(); } }
+        KeyCode::PageUp   => { for _ in 0..10 { app.select_up(); }   }
 
         _ => {}
     }
+
 }
 
 async fn handle_detail_keys(key: KeyEvent, app: &mut AppState, engine: &mut EngineClient) {
     match key.code {
-        // Retour à la liste
         KeyCode::Esc | KeyCode::Char('q') => {
             app.active_panel = ActivePanel::RequestList;
         }
 
-        // Onglets
         KeyCode::Tab => {
             app.detail_tab = match app.detail_tab {
                 DetailTab::Headers => DetailTab::Body,
@@ -132,7 +150,6 @@ async fn handle_detail_keys(key: KeyEvent, app: &mut AppState, engine: &mut Engi
         KeyCode::Char('2') => { app.detail_tab = DetailTab::Body;    app.detail_scroll = 0; }
         KeyCode::Char('3') => { app.detail_tab = DetailTab::Hex;     app.detail_scroll = 0; }
 
-        // Scroll dans le contenu
         KeyCode::Char('j') | KeyCode::Down  => {
             app.detail_scroll = app.detail_scroll.saturating_add(1);
         }
@@ -146,7 +163,15 @@ async fn handle_detail_keys(key: KeyEvent, app: &mut AppState, engine: &mut Engi
             app.detail_scroll = app.detail_scroll.saturating_sub(10);
         }
 
-        // Actions
+        // x — export HAR depuis le détail aussi
+        KeyCode::Char('x') => {
+            engine.send_command(&serde_json::json!({
+                "command": "export_har",
+                "name": "nodadark_export"
+            })).await;
+            app.status_message = Some("📦 Export HAR lancé".into());
+        }
+
         KeyCode::Char('r') => {
             if let Some(req) = &app.selected_request {
                 let id = req.id.clone();
@@ -154,15 +179,12 @@ async fn handle_detail_keys(key: KeyEvent, app: &mut AppState, engine: &mut Engi
                 app.status_message = Some(format!("↪ Replay : {id}"));
             }
         }
-        KeyCode::Char('e') => {
-            app.open_cookie_editor();
-        }
-        KeyCode::Char('a') => {
-            app.open_action_popup();
-        }
+        KeyCode::Char('e') => { app.open_cookie_editor(); }
+        KeyCode::Char('a') => { app.open_action_popup(); }
 
         _ => {}
     }
+
 }
 
 fn handle_search_keys(key: KeyEvent, app: &mut AppState) {
@@ -181,13 +203,11 @@ fn handle_search_keys(key: KeyEvent, app: &mut AppState) {
         }
         KeyCode::Backspace => {
             app.search_input.pop();
-            // Filtrage live
             app.filter_text = app.search_input.clone();
             app.list_offset = 0;
         }
         KeyCode::Char(c) => {
             app.search_input.push(c);
-            // Filtrage live
             app.filter_text = app.search_input.clone();
             app.list_offset = 0;
         }
@@ -226,27 +246,23 @@ async fn execute_popup_action(idx: usize, app: &mut AppState, engine: &mut Engin
         .or_else(|| app.get_selected().map(|r| r.id.clone()));
 
     match idx {
-        0 => { // Replay
+        0 => {
             if let Some(id) = req_id {
                 engine.replay(&id).await;
                 app.status_message = Some(format!("↪ Replay envoyé : {id}"));
             }
             app.active_panel = ActivePanel::RequestList;
         }
-        1 => { // Éditer et rejouer → ouvrir cookie editor pour l'instant
-            app.open_cookie_editor();
-        }
-        2 => { // Éditer cookies
-            app.open_cookie_editor();
-        }
-        3 => { // Drop
+        1 => { app.open_cookie_editor(); }
+        2 => { app.open_cookie_editor(); }
+        3 => {
             if let Some(id) = req_id {
                 engine.drop_request(&id).await;
                 app.status_message = Some(format!("✂ Droppé : {id}"));
             }
             app.active_panel = ActivePanel::RequestList;
         }
-        4 => { // Copier URL (dans le log pour l'instant)
+        4 => {
             if let Some(req) = &app.selected_request {
                 tracing::info!("URL copiée : {}", req.url);
                 app.status_message = Some(format!("📋 URL : {}", req.url));
@@ -255,6 +271,7 @@ async fn execute_popup_action(idx: usize, app: &mut AppState, engine: &mut Engin
         }
         _ => {}
     }
+
 }
 
 fn handle_cookie_editor_keys(key: KeyEvent, app: &mut AppState) {
@@ -274,7 +291,6 @@ fn handle_cookie_editor_keys(key: KeyEvent, app: &mut AppState) {
             }
         }
         KeyCode::Enter => {
-            // Commencer l'édition de la valeur du cookie sélectionné
             if let Some(row) = app.cookie_rows.get(app.cookie_selected) {
                 app.cookie_editing = Some((1, row.1.clone()));
             }
@@ -290,7 +306,6 @@ fn handle_cookie_editor_keys(key: KeyEvent, app: &mut AppState) {
             }
         }
         KeyCode::Tab if app.cookie_editing.is_some() => {
-            // Confirmer l'édition
             if let Some((col, ref buf)) = app.cookie_editing.clone() {
                 if col == 1 {
                     if let Some(row) = app.cookie_rows.get_mut(app.cookie_selected) {

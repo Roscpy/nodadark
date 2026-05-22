@@ -9,7 +9,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 #[derive(Parser, Debug)]
 #[command(name = "nodadark")]
 #[command(about = "NodaDark — Proxy d'interception réseau haute performance")]
-#[command(version = "0.1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
     #[arg(short, long, default_value_t = 8080, help = "Port d'écoute du proxy")]
     port: u16,

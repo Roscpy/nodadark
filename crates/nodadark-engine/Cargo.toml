@@ -1,6 +1,6 @@
 [package]
 name    = "nodadark-engine"
-version = "0.1.0"
+version = "0.1.5"
 edition = "2021"
 description = "NodaDark — Core MITM Proxy Engine"
 
@@ -43,3 +43,4 @@ toml           = "0.8"
 dirs           = "5"
 base64         = "0.21"
 clap = { version = "4.6.1", features = ["derive"] }
+reqwest = { version = "0.13.3", features = ["json", "rustls"] }
